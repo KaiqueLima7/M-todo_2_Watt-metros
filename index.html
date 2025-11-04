@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>HMI - Método dos Dois Wattímetros</title>
+
+<!-- jsPDF + AutoTable -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
+
+<style>
+  :root {
+    --bg: #0e1320;
+    --card: rgba(255,255,255,0.05);
+    --text: #e7ecf5;
+    --accent: #00c6ff;
+    --good: #00ff9b;
+    --bad: #ff6b6b;
+  }
+  .light {
+    --bg: #f4f7fb;
+    --card: #ffffff;
+    --text: #111827;
+    --accent: #007acc;
+    --good: #1e7f4c;
+    --bad: #b91c1c;
+  }
+
+  * { box-sizing: border-box; transition: all 0.3s; }
+  body {
+    margin: 0;
+    font-family: "Segoe UI", Arial, sans-serif;
+    background: radial-gradient(circle at 30% 20%, #0b1220 0%, var(--bg) 80%);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+  }
+
+.container {
+    width: 90%;       /* ocupa 90% da tela do dispositivo */
+    max-width: 480px; /* mantém o tamanho máximo para desktop */
+    background: var(--card);
+    padding: 28px;
+    border-radius: 18px;
+    box-shadow: 0 0 30px rgba(0,0,0,0.4);
+    backdrop-filter: blur(10px);
+}
+
+
+ h1 {background: linear-gradient(90deg, #00c6ff, #00ff9b, #007acc);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;animation: textShine 4s linear infinite;
+}
+@keyframes textShine {0% { background-position: 0% 50%; }100% { background-position: 200% 50%; }
+}
+
+  h2 { font-size: 14px; color: var(--text); text-align: center; opacity: 0.7; margin-bottom: 20px; }
+
+  label { font-size: 13px; display: block; margin-top: 12px; opacity: 0.8; }
+  input, select {
+    width: 100%; padding: 10px 12px; border-radius: 8px; border: none;
+    background: rgba(255,255,255,0.1); color: var(--text); font-size: 14px;
+    outline: none; margin-top: 4px;
+  }
+
+  .btn {
+    padding: 11px 16px; border: none; border-radius: 8px; cursor: pointer;
+    font-weight: 600; color: #fff; display: inline-flex; align-items: center;
+    gap: 8px; justify-content: center; transition: all 0.3s;
+  }
+  .btn.calc { background: var(--accent); }
+  .btn.clear { background: var(--bad); }
+  .btn.pdf { background: var(--good); }
+
+  .btn .text { display: inline-block; }
+  .btn:hover .text { animation: textPulse 1.5s infinite; }
+  @keyframes textPulse { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+  .btn.pdf .icon { animation: downloadPulse 1.5s infinite; }
+  @keyframes downloadPulse { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(3px); } }
+
+  .controls { display: flex; justify-content: space-between; gap: 10px; margin-top: 16px; }
+
+  .results {
+    margin-top: 20px; padding: 14px; border-radius: 10px;
+    background: rgba(255,255,255,0.05); display: none;
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+  .result-item {
+    display: flex; justify-content: space-between; padding: 7px 0;
+    font-size: 14px; border-bottom: 1px dashed rgba(255,255,255,0.1);
+  }
+  .result-item:last-child { border-bottom: none; }
+  .highlight { color: var(--good); font-weight: bold; }
+
+  .fp-meter { height: 10px; background: rgba(255,255,255,0.1); border-radius: 6px; overflow: hidden; margin-top: 8px; }
+  .fp-bar { height: 100%; width: 0%; background: linear-gradient(90deg, var(--bad), orange, var(--good)); transition: width 1s ease; }
+
+  .cap-wrap {
+    display: flex; align-items: center; margin-top: 12px; gap: 14px;
+    position: relative;
+  }
+  .cap-svg { width: 80px; height: 80px; }
+  .cap-body { fill: #2a3240; stroke: rgba(255,255,255,0.1); stroke-width: 2; }
+  .cap-plate { fill: #4a5568; }
+  .cap-charge { 
+    fill: #00ffcc; opacity: 0; transition: opacity 0.5s;
+    filter: drop-shadow(0 0 12px #00ffcc);
+  }
+  .cap-active .cap-charge { 
+    opacity: 1; 
+    animation: chargeGlow 1.2s infinite alternate;
+  }
+  @keyframes chargeGlow {
+    0% { filter: drop-shadow(0 0 12px #00ffcc) brightness(1); }
+    100% { filter: drop-shadow(0 0 30px #00ffcc) brightness(5.2); }
+  }
+
+  .theme-toggle {
+    position: fixed; top: 20px; right: 20px; background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.3); color: var(--text); width: 50px; height: 50px;
+    border-radius: 50%; cursor: pointer; font-size: 20px; display: flex;
+    align-items: center; justify-content: center; backdrop-filter: blur(8px);
+    z-index: 1000; transition: all 0.3s;
+  }
+  .theme-toggle:hover { transform: scale(1.1); }
+
+  .toast {
+    position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+    background: var(--good); color: #000; padding: 14px 28px; border-radius: 50px;
+    font-weight: 600; font-size: 15px; box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+    opacity: 0; visibility: hidden; transition: all 0.4s; z-index: 1000;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .toast.show { opacity: 1; visibility: visible; bottom: 40px; }
+
+  .footer {
+    margin-top: 40px; text-align: center; font-size: 14px; color: var(--text);
+    opacity: 0.7; width: 100%;
+  }
+  .footer h3 { margin: 0; font-weight: 600; color: var(--accent); }
+  .footer p { margin: 4px 0 0; font-style: italic; }
+</style>
+</head>
+<body>
+
+<button id="themeBtn" class="theme-toggle" title="Alternar tema">☀️</button>
+
+<div class="container">
+  <div style="text-align: center; margin-bottom: 16px;">
+    <h1>Método dos Dois Wattímetros</h1>
+    <h2>Correção de Fator de Potência</h2>
+  </div>
+
+  <label title="Valor indicado no primeiro wattímetro, em watts (W). Representa uma das potências medidas no sistema trifásico.">
+    Leitura Wattímetro 1 (W)
+  </label>
+  <input id="w1" type="number" placeholder="Ex: 3500"
+         title="Digite a leitura do primeiro wattímetro(W1).">
+
+  <label title="Valor indicado no segundo wattímetro, em watts (W). Usado junto com W1 para determinar as potências total e reativa.">
+    Leitura Wattímetro 2 (W)
+  </label>
+  <input id="w2" type="number" placeholder="Ex: 1700"
+         title="Digite a leitura do segundo wattímetro(W2).">
+
+  <label title="Tensão medida entre fase e neutro (ou linha, dependendo da ligação). Usada para calcular a potência e o capacitor necessário.">
+    Tensão de Fase (V)
+  </label>
+  <input id="vfase" type="number" placeholder="Ex: 220"
+         title="Informe a tensão de fase. Caso o sistema seja Δ, é a tensão de linha.">
+
+  <label title="Configuração de ligação do sistema trifásico: em Delta (Δ) ou Estrela (Y).">
+    Tipo de Ligação
+  </label>
+  <select id="tipoLig" 
+          title="Escolha o tipo de ligação do sistema trifásico: Δ (Delta) ou Y (Estrela).">
+    <option value="delta">Δ (Delta)</option>
+    <option value="estrela">Y (Estrela)</option>
+  </select>
+
+  <label title="Frequência da rede elétrica (geralmente 60 Hz no Brasil). Afeta o cálculo do capacitor.">
+    Frequência (Hz)
+  </label>
+  <input id="freq" type="number" value="60"
+         title="Digite a frequência da rede elétrica, normalmente 60 Hz.">
+
+  <label title="Valor do fator de potência desejado após a correção. Deve estar entre 0,75 e 1,0.">
+    Fator de Potência Desejado (0,75 a 1,0)
+  </label>
+  <input id="fpDesejado" type="number" step="0.01" min="0.75" max="1.00" value="0.95"
+         title="Informe o fator de potência desejado após a correção (entre 0,75 e 1,0).">
+
+  <div class="controls">
+    <button class="btn calc" id="calcBtn"><span class="text">Calcular</span></button>
+    <button class="btn clear" id="clearBtn"><span class="text">Limpar</span></button>
+    <button class="btn pdf" id="pdfBtn"><span class="text">Exportar PDF</span> <span class="icon">↓</span></button>
+  </div>
+
+  <div class="results" id="results">
+    <div class="result-item"><span>Potência Ativa (P):</span><span id="outP">-</span> W</div>
+    <div class="result-item"><span>Potência Reativa (Q):</span><span id="outQ">-</span> VAr</div>
+    <div class="result-item"><span>Potência Aparente (S):</span><span id="outS">-</span> VA</div>
+    <div class="result-item"><span>Fator de Potência (FP):</span><span id="outFP" class="highlight">-</span></div>
+
+    <div class="fp-meter"><div id="fpBar" class="fp-bar"></div></div>
+
+    <div class="result-item"><span>Capacitor Necessário:</span><span id="outC">-</span> µF</div>
+
+    <div class="cap-wrap" id="capWrap" title="Capacitor para correção do FP">
+      <svg class="cap-svg" viewBox="0 0 100 100">
+        <rect x="20" y="25" width="15" height="50" rx="3" class="cap-body"></rect>
+        <rect x="65" y="25" width="15" height="50" rx="3" class="cap-body"></rect>
+        <rect x="35" y="35" width="12" height="30" class="cap-plate"></rect>
+        <rect x="53" y="35" width="12" height="30" class="cap-plate"></rect>
+        <rect x="47" y="40" width="6" height="20" class="cap-charge"></rect>
+      </svg>
+      <span id="capStatus">Capacitor Inativo</span>
+    </div>
+  </div>
+</div>
+
+<div class="footer">
+  <h3>Desenvolvido por:</h3>
+  <p>Antonio Kaíque Lima</p>
+  <p>Lucas Felix</p>
+</div>
+
+<div id="toast" class="toast">Relatório exportado com sucesso!✅</div>
+
+<script>
+const { jsPDF } = window.jspdf;
+const el = id => document.getElementById(id);
+function clamp(v, a, b) { return Math.min(Math.max(v, a), b); }
+
+function calcular() {
+  const W1 = parseFloat(el('w1').value) || 0;
+  const W2 = parseFloat(el('w2').value) || 0;
+  const VfaseInput = parseFloat(el('vfase').value) || 0;
+  const fpDesejado = clamp(parseFloat(el('fpDesejado').value), 0.75, 1.0);
+  const tipo = el('tipoLig').value;
+  const f = parseFloat(el('freq').value) || 60;
+
+  if (W1 <= 0 || W2 <= 0 || VfaseInput <= 0) {
+  const toast = el('toast');
+  toast.textContent = 'Preencha todos os campos com valores positivos! ⚠️';
+  toast.style.background = 'var(--bad)';
+  toast.classList.add('show');
+  setTimeout(() => {
+    toast.classList.remove('show');
+    toast.style.background = 'var(--good)';
+    toast.textContent = 'Relatório exportado com sucesso!✅';
+  }, 3000);
+  return;
+}
+
+  const P = W1 + W2;
+  const Q = Math.sqrt(3) * Math.abs(W2 - W1);
+  const S = Math.sqrt(P**2 + Q**2);
+  const FP = P / S;
+
+  const phi1 = Math.acos(FP);
+  const phi2 = Math.acos(fpDesejado);
+  let Qc = P * (Math.tan(phi1) - Math.tan(phi2));
+  if (Qc < 0) Qc = 0;
+
+// Ajuste do cálculo de C conforme tipo de ligação
+let Vfase = VfaseInput; // V_linha fornecida pelo usuário
+let C = 0;               // valor final em µF
+const omega = 2 * Math.PI * f; // rad/s
+
+// Qc já calculado anteriormente: Qc = P * (tan(phi1) - tan(phi2))
+// (assume Qc >= 0, conforme seu código anterior)
+
+if (Qc <= 0) {
+  C = 0;
+} else {
+  if (tipo === 'estrela') {
+    // Para conexão estrela: C_phase = Qc_total / (ω * V_linha^2)
+    // (derivação: Qc = V_linha^2 * ω * C_phase)
+    C = (Qc / (omega * Vfase**2)) * 1e6; // em µF
+  } else if (tipo === 'delta') {
+    // Para conexão delta: C_branch = Qc_total / (3 * ω * V_linha^2)
+    // (cada capacitor em Δ tem C_branch = Qc_total / (3*ω*V_linha^2))
+    C = (Qc / (3 * omega * Vfase**2)) * 1e6; // em µF
+  } else {
+    // fallback
+    C = (Qc / (omega * Vfase**2)) * 1e6;
+  }
+}
+
+  el('results').style.display = 'block';
+  el('outP').textContent = P.toFixed(2);
+  el('outQ').textContent = Q.toFixed(2);
+  el('outS').textContent = S.toFixed(2);
+  el('outFP').textContent = FP.toFixed(3);
+  el('outC').textContent = C.toFixed(2);
+  el('fpBar').style.width = `${FP * 100}%`;
+
+  const cap = el('capWrap');
+  const capText = el('capStatus');
+  if (C > 0.001) {
+    cap.classList.add('cap-active');
+    capText.textContent = 'Capacitor Ativo';
+  } else {
+    cap.classList.remove('cap-active');
+    capText.textContent = 'Capacitor Inativo';
+  }
+}
+
+function limpar() {
+  el('w1').value = '';
+  el('w2').value = '';
+  el('vfase').value = '';
+  el('freq').value = 60;
+  el('fpDesejado').value = 0.95;
+  el('tipoLig').value = 'delta';
+  el('results').style.display = 'none';
+  el('capWrap').classList.remove('cap-active');
+  el('capStatus').textContent = 'Capacitor inativo';
+  el('fpBar').style.width = '0%';
+}
+
+function showToast() {
+  const toast = el('toast');
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 3000);
+}
+
+function exportarPDF() {
+  if (el('results').style.display === 'none') {
+    alert('Calcule antes de exportar.');
+    return;
+  }
+
+  const doc = new jsPDF('p', 'mm', 'a4');
+  const margin = 20;
+  let y = 25;
+  doc.setFont("helvetica");
+  doc.setFontSize(18);
+  doc.setTextColor(0, 102, 204);
+  doc.setFont(undefined, 'bold');
+  doc.text("Relatório Técnico", margin, y);
+  y += 8;
+  doc.setFontSize(14);
+  doc.setTextColor(70, 70, 70);
+  doc.text("Método dos Dois Wattímetros", margin, y);
+  y += 10;
+  doc.setFontSize(11);
+  doc.setTextColor(0, 0, 0);
+
+  doc.autoTable({
+    startY: y,
+    head: [['Parâmetro', 'Valor', 'Unidade']],
+    body: [
+      ['Wattímetro 1', el('w1').value, 'W'],
+      ['Wattímetro 2', el('w2').value, 'W'],
+      ['Tensão de fase', el('vfase').value, 'V'],
+      ['Frequência', el('freq').value, 'Hz'],
+      ['Tipo de ligação', el('tipoLig').value, ''],
+      ['Potência Ativa (P)', el('outP').textContent, 'W'],
+      ['Potência Reativa (Q)', el('outQ').textContent, 'VAr'],
+      ['Potência Aparente (S)', el('outS').textContent, 'VA'],
+      ['Fator de Potência (FP)', el('outFP').textContent, ''],
+      ['Capacitor', el('outC').textContent, 'µF']
+    ],
+    theme: 'grid',
+    headStyles: { fillColor: [0, 102, 204], textColor: 255, fontStyle: 'bold', fontSize: 11 },
+    styles: { fontSize: 10, cellPadding: 5, textColor: [0, 0, 0] },
+    alternateRowStyles: { fillColor: [245, 250, 255] },
+    margin: { left: margin, right: margin }
+  });
+
+  // Rodapé 
+  y += 250;
+  doc.setFontSize(10);
+  doc.setTextColor(100);
+  doc.text("Desenvolvido por: Antonio Kaíque Lima e Lucas Felix", margin, y);
+
+  doc.save("Relatorio_Metodo_Dois_Wattimetros.pdf");
+  showToast();
+}
+
+// Tema
+el('themeBtn').addEventListener('click', () => {
+  const isLight = document.documentElement.classList.toggle('light');
+  el('themeBtn').textContent = isLight ? '🌙' : '☀️';
+});
+
+if (document.documentElement.classList.contains('light')) {
+  el('themeBtn').textContent = '🌙';
+}
+
+el('calcBtn').addEventListener('click', calcular);
+el('clearBtn').addEventListener('click', limpar);
+el('pdfBtn').addEventListener('click', exportarPDF);
+</script>
+</body>
+</html>
